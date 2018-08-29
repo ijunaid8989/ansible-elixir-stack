@@ -38,3 +38,62 @@ def project do
 ```
 
 That just changes the `version` to use the git commit SHA.
+
+
+###Update
+
+Using commit SHA will not work with distillery.
+
+The issue with git_sha is that it’s not ordered. The next version is assumed to have a number that is greater than the previous one by trivial alphanumeric sort. With sha that’s not the case.
+
+You might use date for that purpose. E. g.
+```
+git log -1 --date=raw --format=%cd
+#⇒ 1535467693 +0200 # seconds since epoch
+```
+Now let’s elixir it:
+```
+{epoch, _} = System.cmd("git", ~w|log -1 --date=raw --format=%cd|)
+[sec, tz] =
+  epoch
+  |> String.split(~r/\s+/, trim: true)
+  |> Enum.map(&String.to_integer/1)
+#⇒ [1527769224, 200]
+sec + tz * 36 # * 60 * 60 / 100
+#⇒ 1527776424
+```
+The number above is always growing.
+
+Sidenote: use inplace binary pattern match instead of String.slice/3 whenever possible:
+```
+{<<git_sha::binary-size(8), _rest::binary>>, _exit_code} =
+  System.cmd("git", ["rev-parse", "HEAD"])
+#⇒ {"556c53987eb55c82ffb6925f9f56eae5de01c119\n", 0}
+git_sha
+#⇒ "556c5398"
+```
+
+So in your application's mix.exs file
+
+```elixir
+  defp versions do
+    {epoch, _} = System.cmd("git", ~w|log -1 --date=raw --format=%cd|)
+    [sec, tz] =
+      epoch
+      |> String.split(~r/\s+/, trim: true)
+      |> Enum.map(&String.to_integer/1)
+    sec + tz * 36
+  end
+```
+
+and do this way
+
+```elixir
+def project do
+  [app: :hello_phoenix,
+   version: "1.4.1-#{versions}",
+   elixir: "~> 1.0",
+   ...
+```
+
+You might do whatever you want, the date is constantly growing with time, unlike sha, so it’s applicable for your needs. Also you might use commit number, or whatever constantly growing.
